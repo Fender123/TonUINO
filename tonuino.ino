@@ -736,6 +736,10 @@ void loop() {
 
         randomSeed(micros());
 
+        // play sound if card is detected
+        mp3.playMp3FolderTrack(270);
+        delay(1400);
+
         // prepare boundaries for playback
         switch (playback.currentTag.mode) {
           case STORY: {}
