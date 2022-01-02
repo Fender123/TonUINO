@@ -285,7 +285,7 @@ enum {START, STOP, CHECK, SHUTDOWN};
 enum {READ, WRITE, MIGRATE, RESET, RESET_PROGRESS};
 
 // status led actions
-enum {OFF, SOLID, PULSE, BLINK, BURST2, BURST4, BURST8};
+enum {OFF, SOLID, PULSE, PULSE_MM, BLINK, BURST2, BURST4, BURST8};
 
 // define general configuration constants
 const uint8_t mp3SerialRxPin = 2;                   // mp3 serial rx, wired to tx pin of DFPlayer Mini
@@ -711,7 +711,7 @@ void loop() {
 #else
 #if defined STATUSLED ^ defined STATUSLEDRGB
   if (playback.isPlaying) statusLedUpdate(SOLID, 0, 255, 0, 100);
-  else statusLedUpdate(PULSE, 0, 255, 0, 100);
+  else statusLedUpdate(PULSE_MM, 0, 255, 0, 100);
 #endif
 #endif
 
@@ -738,7 +738,8 @@ void loop() {
 
         // play sound if card is detected
         mp3.playMp3FolderTrack(270);
-        delay(1400);
+        //delay(1400);
+        waitPlaybackToFinish(255, 0, 0, 100);
 
         // prepare boundaries for playback
         switch (playback.currentTag.mode) {
@@ -2143,6 +2144,22 @@ void statusLedUpdate(uint8_t statusLedAction, uint8_t red, uint8_t green, uint8_
             }
           }
           statusLedUpdateHal(red, green, blue, statusLedFade);
+          break;
+        }
+      case PULSE_MM: {
+          if (statusLedDirection) {
+            statusLedFade += 5;
+            if (statusLedFade >= 204) {
+              statusLedDirection = !statusLedDirection;
+            }
+          }
+          else {
+            statusLedFade -= 5;
+            if (statusLedFade <= -10) {
+              statusLedDirection = !statusLedDirection;
+            }
+          }
+          statusLedUpdateHal(red, green, blue, max(min(statusLedFade, 204), 1));
           break;
         }
       case BLINK: {
