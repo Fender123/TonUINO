@@ -1367,22 +1367,30 @@ void playNextTrack(uint16_t globalTrack, bool directionForward, bool triggeredMa
       // there are no more tracks after the current one
       else {
         // if not triggered manually, stop playback (and reset progress)
-        if (!triggeredManually) {
-          playback.playListMode = false;
-          switchButtonConfiguration(PAUSE);
-          shutdownTimer(START);
-          Serial.print(playbackModeName[playback.currentTag.mode]);
-          Serial.print(F("-stop"));
-          if (playback.currentTag.mode == STORYBOOK) {
-            Serial.print(F("-reset"));
-            EEPROM.update(playback.currentTag.folder, 0);
+
+        // if (V)ALBUM or (V)PARTY mode start from beginning
+        if(playback.currentTag.mode == ALBUM || playback.currentTag.mode == PARTY || playback.currentTag.mode == VALBUM || playback.currentTag.mode == VPARTY) {
+          playback.playListItem = 1;
+          printModeFolderTrack(true);
+          mp3.playFolderTrack(playback.currentTag.folder, playback.playList[playback.playListItem - 1]);
+        } else {
+          if (!triggeredManually) {
+            playback.playListMode = false;
+            switchButtonConfiguration(PAUSE);
+            shutdownTimer(START);
+            Serial.print(playbackModeName[playback.currentTag.mode]);
+            Serial.print(F("-stop"));
+            if (playback.currentTag.mode == STORYBOOK) {
+              Serial.print(F("-reset"));
+              EEPROM.update(playback.currentTag.folder, 0);
+            }
+            Serial.println();
+            mp3.stop();
           }
-          Serial.println();
-          mp3.stop();
-        }
 #if defined STATUSLED
-        else statusLedUpdate(BURST2, 255, 0, 0, 0);
+          else statusLedUpdate(BURST2, 255, 0, 0, 0);
 #endif
+        }
       }
     }
     // play previous track?
