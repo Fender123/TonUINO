@@ -313,6 +313,7 @@ const uint16_t buttonClickDelay = 1000;             // time during which a butto
 const uint16_t buttonShortLongPressDelay = 2000;    // time after which a button press is considered a long press (in milliseconds)
 const uint16_t buttonLongLongPressDelay = 5000;     // longer long press delay for special cases, i.e. to trigger the parents menu (in milliseconds)
 const uint32_t debugConsoleSpeed = 9600;            // speed for the debug console
+const uint8_t LAST_PLAYED_ADDR = 200;               // EEPROM address for lastPlayed struct
 
 // define magic cookie (by default 0x13 0x37 0xb3 0x47)
 const uint8_t magicCookieHex[4] = {0x13, 0x37, 0xb3, 0x47};
@@ -409,6 +410,8 @@ uint32_t magicCookie = 0;
 uint32_t preferenceCookie = 0;
 playbackStruct playback;
 preferenceStruct preference;
+nfcTagStruct lastPlayed;
+bool playLastPlayed = false;
 
 // ################################################################################################################################################################
 // ############################################################### no configuration below this line ###############################################################
@@ -429,6 +432,7 @@ void shutdownTimer(uint8_t timerAction);
 void preferences(uint8_t preferenceAction);
 uint8_t prompt(uint8_t promptOptions, uint16_t promptHeading, uint16_t promptOffset, uint8_t promptCurrent, uint8_t promptFolder, bool promptPreview, bool promptChangeVolume);
 void parentsMenu();
+bool lastPlayedValid();
 #if defined PINCODE
 bool enterPinCode();
 #endif
@@ -575,6 +579,13 @@ void setup() {
 
   preferences(READ);
 
+  EEPROM.get(LAST_PLAYED_ADDR, lastPlayed);
+  Serial.println(F("Last played: "));
+  Serial.print(F("   folder "));
+  Serial.println(lastPlayed.folder);
+  Serial.print(F("   mode "));
+  Serial.println(lastPlayed.mode);
+
   Serial.println(F("init nfc"));
   SPI.begin();
   mfrc522.PCD_Init();
@@ -717,14 +728,25 @@ void loop() {
 
   // ################################################################################
   // # main code block, if nfc tag is detected and TonUINO is not locked do something
-  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial() && !playback.isLocked) {
+  if ((playLastPlayed && !playback.isPlaying && lastPlayedValid()) || 
+    (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial() && !playback.isLocked)) {
     // if the current playback mode is story book mode, only while playing: store the current progress
     if (playback.currentTag.mode == STORYBOOK && playback.isPlaying) {
       Serial.print(F("save "));
       printModeFolderTrack(true);
       EEPROM.update(playback.currentTag.folder, playback.playList[playback.playListItem - 1]);
     }
-    uint8_t readNfcTagStatus = readNfcTagData();
+    uint8_t readNfcTagStatus;
+    bool isLastedPlayed = false;
+    if(playLastPlayed) {
+      Serial.println(F("play lasted played"));
+      readNfcTagStatus = 1;
+      memcpy(&playback.currentTag, &lastPlayed, sizeof(lastPlayed));
+      isLastedPlayed = true;
+    } else {
+      readNfcTagStatus = readNfcTagData();
+    }
+    playLastPlayed = false;
     // ##############################
     // # nfc tag is successfully read
     if (readNfcTagStatus == 1) {
@@ -736,10 +758,12 @@ void loop() {
 
         randomSeed(micros());
 
-        // play sound if card is detected
-        mp3.playMp3FolderTrack(270);
-        //delay(1400);
-        waitPlaybackToFinish(255, 0, 0, 100);
+        if (!isLastedPlayed) {
+          // play sound if card is detected
+          mp3.playMp3FolderTrack(270);
+          //delay(1400);
+          waitPlaybackToFinish(255, 0, 0, 100);
+        }
 
         // prepare boundaries for playback
         switch (playback.currentTag.mode) {
@@ -817,6 +841,10 @@ void loop() {
         playback.playListMode = true;
         printModeFolderTrack(true);
         mp3.playFolderTrack(playback.currentTag.folder, playback.playList[playback.playListItem - 1]);
+
+        // store in lastPlayed
+        memcpy(&lastPlayed, &playback.currentTag, sizeof(lastPlayed));
+        EEPROM.put(LAST_PLAYED_ADDR, lastPlayed);
       }
       // # end - nfc tag has our magic cookie on it
       // ##########################################
@@ -955,6 +983,8 @@ void loop() {
         shutdownTimer(STOP);
         Serial.println(F("play"));
         mp3.start();
+      } else {
+        playLastPlayed = true;
       }
     }
   }
@@ -2041,6 +2071,10 @@ void parentsMenu() {
   switchButtonConfiguration(PAUSE);
   shutdownTimer(START);
   inputEvent = NOP;
+}
+
+bool lastPlayedValid() {
+  return lastPlayed.mode <= VPARTY;
 }
 
 #if defined PINCODE
