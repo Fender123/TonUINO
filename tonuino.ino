@@ -189,8 +189,8 @@
        |      |  |  |  |  |
        |      |  |  |  |  +- end track (0x01-0xFF - in vstory (0x06), valbum (0x07) and vparty (0x08) modes)
        |      |  |  |  +- single/start track (0x01-0xFF - in single (0x04), vstory (0x06), valbum (0x07) and vparty (0x08) modes)
-       |      |  |  +- playback mode (0x01-0x08)
-       |      |  +- folder (0x01-0x63)
+       |      |  |  +- playback mode (0x01-0x08) (modifier: 0x07 Toggle LED)
+       |      |  +- folder (0x01-0x63) (0x00 for modifier)
        |      +- version (currently always 0x01)
        +- magic cookie to recognize that a card belongs to TonUINO (by default 0x13 0x37 0xb3 0x47)
 
@@ -204,6 +204,14 @@
    9   01 02 04 10 - version, folder, playback mode, single track / start strack
   10   19 00 00 00 - end track
   11   00 00 00 00
+
+  Modifier Cards:
+
+  See NFC Tag data above. All modifier cards set the version to 2 and folder to 0.
+  You can use the TonUINO NFC Tools app to write modifier cards. Set Version to Tonuino 2.1.x, choose Modifier tag
+  and select the modus written below.
+  Currently the following modifiers are implemented:
+  - 0x07 toggle status LED (on or off) (use "Audio Feedback" in TonUINO NFC Tools app)
 
   additional non standard libraries used in this firmware:
   ========================================================
@@ -390,6 +398,7 @@ struct playbackStruct {
   uint8_t playListItem = 0;
   uint8_t playListItemCount = 0;
   nfcTagStruct currentTag;
+  bool ledActive = true;
 };
 
 // this struct stores preferences
@@ -1517,14 +1526,27 @@ uint8_t readNfcTagData() {
 
     // if cookie is not blank, update ncfTag object with data read from nfc tag
     if (tempMagicCookie != 0) {
-      playback.currentTag.cookie = tempMagicCookie;
-      playback.currentTag.version = nfcTagReadBuffer[4];
-      playback.currentTag.folder = nfcTagReadBuffer[5];
-      playback.currentTag.mode = nfcTagReadBuffer[6];
-      playback.currentTag.multiPurposeData1 = nfcTagReadBuffer[7];
-      playback.currentTag.multiPurposeData2 = nfcTagReadBuffer[8];
-      mfrc522.PICC_HaltA();
-      mfrc522.PCD_StopCrypto1();
+      if(nfcTagReadBuffer[4] == 2 && nfcTagReadBuffer[5] == 0) {
+        // handle modifier tag
+        switch(nfcTagReadBuffer[6]) {
+          case 0x07: {
+            Serial.println("LED Active modifier detected!");
+            playback.ledActive = !playback.ledActive;
+            mfrc522.PICC_HaltA();
+            mfrc522.PCD_StopCrypto1();
+            return 0;
+          }
+        }
+      } else {
+        playback.currentTag.cookie = tempMagicCookie;
+        playback.currentTag.version = nfcTagReadBuffer[4];
+        playback.currentTag.folder = nfcTagReadBuffer[5];
+        playback.currentTag.mode = nfcTagReadBuffer[6];
+        playback.currentTag.multiPurposeData1 = nfcTagReadBuffer[7];
+        playback.currentTag.multiPurposeData2 = nfcTagReadBuffer[8];
+        mfrc522.PICC_HaltA();
+        mfrc522.PCD_StopCrypto1();
+      }
     }
     // if magic cookie is blank, clear ncfTag object
     else {
@@ -2261,7 +2283,11 @@ void statusLedUpdateHal(uint8_t red, uint8_t green, uint8_t blue, int16_t bright
   rgbLed.sync();
 #else
   // update vanilla led
-  analogWrite(statusLedPin, (uint8_t)(brightness));
+  if(playback.ledActive == true) {
+    analogWrite(statusLedPin, (uint8_t)(brightness));
+  } else {
+    analogWrite(statusLedPin, (uint8_t)(0));
+  }
 #endif
 }
 #endif
